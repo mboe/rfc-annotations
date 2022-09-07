@@ -11,6 +11,14 @@ import htmlfilter   # filter_html
 import rfcindex     # read_xml_document, fetch_element, referenced_document_ids
 import util         # filtered_files, correct_path, replace_links_in_text, rewrite_rfc_anchor, create_anchor
 
+try:
+    from markdown import markdown
+except ImportError as err:
+    def markdown(s: str) -> str:
+        return s
+    util.error(f"please install markdown package: pip3 install markdown")
+    exit(-2)
+
 ''' Get and output the annotations for RFC annotations tools '''
 
 
@@ -65,6 +73,9 @@ def get_annotations(rfc: str, directories: Optional[str], errata_list: list, pat
 # converts an annotation text file into an array of dictionaries storing the annotation details
 def get_annotation_from_file(path: str, errata_list: list, patches: Optional[dict],
                              rfc_list: Optional[list] = None) -> [dict]:
+    # sections containing plain text will be embedded with a tag with this element name
+    # if empty, markdown conversion is triggered
+    plain_text_html_element = "pre"
 
     def check_errata_status(annotation: dict) -> dict:
         # check whether the current annotation is based on an outdated erratum version
@@ -92,7 +103,13 @@ def get_annotation_from_file(path: str, errata_list: list, patches: Optional[dic
             if line.strip() == "####################":
                 # a new annotation entry starts here
                 if is_plain_text:
-                    notes.append("</pre>")
+                    if len(plain_text_html_element) > 0:
+                        notes.append(f"</{plain_text_html_element}>")
+                    else:
+                        s = ""
+                        for note_line in notes:
+                            s += note_line
+                        notes = [markdown(s)]
                 else:
                     notes = util.rewrite_rfc_anchors(htmlfilter.filter_html(notes, path=path), rfc_list)
                 entry["notes"] = notes
@@ -154,12 +171,19 @@ def get_annotation_from_file(path: str, errata_list: list, patches: Optional[dic
                     pos = None if search_result is None else search_result.span()[0]
                     if pos is None or pos > 0:
                         is_plain_text = True
-                        notes.append("<pre>")
+                        if len(plain_text_html_element) > 0:
+                            notes.append(f"<{plain_text_html_element}>")
                 if is_plain_text:
                     line = util.rewrite_rfc_anchor(util.replace_links_in_text(line, True), rfc_list)
                 notes.append(line)
         if is_plain_text:
-            notes.append("\n</pre>")
+            if len(plain_text_html_element) > 0:
+                notes.append("\n</{plain_text_html_element}>")
+            else:
+                s = ""
+                for note_line in notes:
+                    s += note_line
+                notes = [markdown(s)]
         else:
             notes = util.rewrite_rfc_anchors(htmlfilter.filter_html(notes, path=path), rfc_list)
         entry["notes"] = notes
